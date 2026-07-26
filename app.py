@@ -6,7 +6,7 @@ import requests
 # 1. KHO DỮ LIỆU ĐỊA ĐIỂM (Bổ sung Tọa độ & Lời giới thiệu ngắn)
 # ---------------------------------------------------------
 POI_DATA = {
-    "Trường THPT (Điểm xuất phát)": {
+    "Trường PT Năng khiếu TD,TT Bình Chánh (Điểm xuất phát)": {
         "coords": (10.6865, 106.5942),
         "desc": "Điểm tập kết và xuất phát hành trình."
     },
