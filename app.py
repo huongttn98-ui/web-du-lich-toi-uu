@@ -39,13 +39,26 @@ POI_DATA = {
 # 2. HÀM TỰ ĐỘNG ĐỔI ĐỊA CHỈ TỰ ĐIỀN THÀNH TỌA ĐỘ GPS (Nominatim API)
 # ---------------------------------------------------------
 def get_coords_from_address(address_str):
-    url = f"https://nominatim.openstreetmap.org/search?q={address_str}&format=json&limit=1"
-    headers = {"User-Agent": "MyTourismApp/1.0"}
+    # 1. Kiểm tra nếu người dùng dán trực tiếp Tọa độ (Ví dụ: 10.6865, 106.5942)
+    try:
+        parts = address_str.split(',')
+        if len(parts) == 2:
+            lat, lon = float(parts[0].strip()), float(parts[1].strip())
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                return (lat, lon)
+    except:
+        pass
+
+    # 2. Nếu là chuỗi địa chỉ, thêm ", Vietnam" để API dễ định vị hơn
+    search_query = address_str if "Vietnam" in address_str or "Việt Nam" in address_str else f"{address_str}, Vietnam"
+    url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=1"
+    headers = {"User-Agent": "TourismApp_ResearchProject/1.0 (contact@school.edu.vn)"}
+    
     try:
         res = requests.get(url, headers=headers, timeout=5).json()
         if res:
             return (float(res[0]["lat"]), float(res[0]["lon"]))
-    except:
+    except Exception as e:
         pass
     return None
 
