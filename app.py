@@ -45,35 +45,38 @@ def smart_geocode(input_str):
     
     clean_str = input_str.strip()
     
-    # 1. TRƯỜNG HỢP A: Người dùng dán trực tiếp Tọa độ (Ví dụ: "10.6865, 106.5942" hoặc "10.6865 106.5942")
+    # 1. TRƯỜNG HỢP ƯU TIÊN 1: Người dùng dán Tọa độ chuẩn Google Maps (VD: 10.6865, 106.5942 hoặc 10.6865 106.5942)
+    # Tách lấy 2 số thực chính xác tuyệt đối
     coord_pattern = r'^(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)$'
     match = re.match(coord_pattern, clean_str)
     if match:
-        lat, lon = float(match.group(1)), float(match.group(2))
+        lat = round(float(match.group(1)), 6)
+        lon = round(float(match.group(2)), 6)
         if -90 <= lat <= 90 and -180 <= lon <= 180:
             return (lat, lon)
 
-    # 2. TRƯỜNG HỢP B: Dùng Mapbox Geocoding API (Công khai miễn phí tìm địa chỉ nhà/hẻm tốt nhất)
+    # 2. TRƯỜNG HỢP ƯU TIÊN 2: Tìm kiếm địa chỉ qua Mapbox API (Có hỗ trợ giới hạn tọa độ khu vực TP.HCM / Việt Nam)
     mapbox_token = "pk.eyJ1IjoibWFwYm94LWRlbW8iLCJhIjoiY2p4OTBsNGtwMDJhZDN5b2Nmd3V3dnE2OSJ9.R43s2oOvhg0T4a0Mv1K2mQ"
-    mapbox_url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(clean_str)}.json?access_token={mapbox_token}&country=vn&limit=1"
+    # Bổ sung proximity=106.69,107.77 để ưu tiên tìm đúng địa chỉ tại TP.HCM / Nam Bộ
+    mapbox_url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(clean_str)}.json?access_token={mapbox_token}&country=vn&proximity=106.69,10.77&limit=1"
     
     try:
         res = requests.get(mapbox_url, timeout=4).json()
         if res.get("features"):
             coords = res["features"][0]["center"] # Mapbox trả về [lon, lat]
-            return (coords[1], coords[0])
+            return (round(coords[1], 6), round(coords[0], 6))
     except:
         pass
 
-    # 3. TRƯỜNG HỢP C: Dự phòng bằng Nominatim
+    # 3. TRƯỜNG HỢP 3: Dự phòng bằng Nominatim
     search_query = clean_str if ("Vietnam" in clean_str or "Việt Nam" in clean_str) else f"{clean_str}, Việt Nam"
     nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(search_query)}&format=json&limit=1"
-    headers = {"User-Agent": "TourismApp_ResearchProject/2.0"}
+    headers = {"User-Agent": "TourismApp_ResearchProject/3.0"}
     
     try:
         res = requests.get(nom_url, headers=headers, timeout=4).json()
         if res:
-            return (float(res[0]["lat"]), float(res[0]["lon"]))
+            return (round(float(res[0]["lat"]), 6), round(float(res[0]["lon"]), 6))
     except:
         pass
 
