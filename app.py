@@ -2,51 +2,28 @@ import streamlit as st
 import itertools
 import requests
 import re
+import folium
+from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Hệ thống Tối ưu Tuyến đường Du lịch", page_icon="🗺️", layout="wide")
-
-# ---------------------------------------------------------
-# 1. KHO DỮ LIỆU ĐỊA ĐIỂM THAM QUAN
-# ---------------------------------------------------------
-POI_DATA = {
-    "Khu di tích Lăng Le - Bàu Cò": {
-        "coords": (10.7028, 106.5358),
-        "desc": "Di tích lịch sử cấp Quốc gia, ghi dấu chiến công vang dội năm 1948.",
-        "image": "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=600"
-    },
-    "Chùa Phật Lớn (Bát Bửu Phật Đài)": {
-        "coords": (10.7291, 106.5297),
-        "desc": "Nơi thờ tượng Phật Thích Ca cao 7m uy nghiêm, không gian thanh tĩnh.",
-        "image": "https://images.unsplash.com/photo-1542640244-7e672d6cef21?w=600"
-    },
-    "Di tích Dân công hỏa tuyến Mậu Thân": {
-        "coords": (10.7150, 106.5410),
-        "desc": "Nơi tưởng niệm sự hy sinh anh dũng của 32 nữ dân công hỏa tuyến năm 1968.",
-        "image": "https://images.unsplash.com/photo-1590059206170-661f433a0e88?w=600"
-    },
-    "Dinh Độc Lập": {
-        "coords": (10.7769, 106.6953),
-        "desc": "Di tích quốc gia đặc biệt, biểu tượng lịch sử ngày thống nhất đất nước 30/04/1975.",
-        "image": "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=600"
-    },
-    "Bến Nhà Rồng": {
-        "coords": (10.7681, 106.7068),
-        "desc": "Bảo tàng Hồ Chí Minh – nơi Bác Hồ ra đi tìm đường cứu nước năm 1911.",
-        "image": "https://images.unsplash.com/photo-1508873696983-2df515122519?w=600"
-    }
-}
+st.set_page_config(page_title="Tối ưu lộ trình du lịch thực tế", page_icon="🗺️", layout="wide")
 
 # ---------------------------------------------------------
-# 2. HÀM ĐỊNH VỊ ĐỊA CHỈ NHÀ RIÊNG THÔNG MINH (Hỗ trợ Tọa độ & Mapbox & Nominatim)
+# 1. HÀM CHUYỂN ĐỔI ĐỊA CHỈ / TỌA ĐỘ THÔNG MINH (SMART GEOCODING)
 # ---------------------------------------------------------
 def smart_geocode(input_str):
     if not input_str or not input_str.strip():
         return None
-    
     clean_str = input_str.strip()
     
-    # 1. TRƯỜNG HỢP ƯU TIÊN 1: Người dùng dán Tọa độ chuẩn Google Maps (VD: 10.6865, 106.5942 hoặc 10.6865 106.5942)
-    # Tách lấy 2 số thực chính xác tuyệt đối
+    # Ưu tiên 1: Người dùng dán Link Google Maps (Bắt chuỗi dạng @lat,lon)
+    gmaps_link_pattern = r'@(-?\d+\.\d+),(-?\d+\.\d+)'
+    gmaps_match = re.search(gmaps_link_pattern, clean_str)
+    if gmaps_match:
+        lat = round(float(gmaps_match.group(1)), 6)
+        lon = round(float(gmaps_match.group(2)), 6)
+        return (lat, lon)
+
+    # Ưu tiên 2: Người dùng dán trực tiếp Tọa độ GPS (VD: 10.7769, 106.6953)
     coord_pattern = r'^(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)$'
     match = re.match(coord_pattern, clean_str)
     if match:
@@ -55,144 +32,193 @@ def smart_geocode(input_str):
         if -90 <= lat <= 90 and -180 <= lon <= 180:
             return (lat, lon)
 
-    # 2. TRƯỜNG HỢP ƯU TIÊN 2: Tìm kiếm địa chỉ qua Mapbox API (Có hỗ trợ giới hạn tọa độ khu vực TP.HCM / Việt Nam)
+    # Ưu tiên 3: Tìm kiếm địa chỉ tự động qua Mapbox API (Ưu tiên TP.HCM)
+    search_text = clean_str
+    if "Hồ Chí Minh" not in search_text and "TPHCM" not in search_text and "Việt Nam" not in search_text:
+        search_text += ", Hồ Chí Minh, Việt Nam"
+        
     mapbox_token = "pk.eyJ1IjoibWFwYm94LWRlbW8iLCJhIjoiY2p4OTBsNGtwMDJhZDN5b2Nmd3V3dnE2OSJ9.R43s2oOvhg0T4a0Mv1K2mQ"
-    # Bổ sung proximity=106.69,107.77 để ưu tiên tìm đúng địa chỉ tại TP.HCM / Nam Bộ
-    mapbox_url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(clean_str)}.json?access_token={mapbox_token}&country=vn&proximity=106.69,10.77&limit=1"
-    
+    mapbox_url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(search_text)}.json?access_token={mapbox_token}&country=vn&proximity=106.69,10.77&limit=1"
     try:
         res = requests.get(mapbox_url, timeout=4).json()
         if res.get("features"):
-            coords = res["features"][0]["center"] # Mapbox trả về [lon, lat]
+            coords = res["features"][0]["center"]  # Mapbox trả về [lon, lat]
             return (round(coords[1], 6), round(coords[0], 6))
-    except:
-        pass
-
-    # 3. TRƯỜNG HỢP 3: Dự phòng bằng Nominatim
-    search_query = clean_str if ("Vietnam" in clean_str or "Việt Nam" in clean_str) else f"{clean_str}, Việt Nam"
-    nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(search_query)}&format=json&limit=1"
-    headers = {"User-Agent": "TourismApp_ResearchProject/3.0"}
-    
-    try:
-        res = requests.get(nom_url, headers=headers, timeout=4).json()
-        if res:
-            return (round(float(res[0]["lat"]), 6), round(float(res[0]["lon"]), 6))
     except:
         pass
 
     return None
 
 # ---------------------------------------------------------
-# 3. HÀM TÍNH KHOẢNG CÁCH OSRM
+# 2. GIAO DIỆN & CẤU HÌNH ĐẦU VÀO
 # ---------------------------------------------------------
-def get_distance_matrix(coords_list):
-    n = len(coords_list)
-    coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords_list])
-    url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
-    try:
-        res = requests.get(url, timeout=5).json()
-        distances = res.get("distances", [])
-        return [[round(distances[i][j] / 1000.0, 2) for j in range(n)] for i in range(n)]
-    except:
-        return None
+st.title("🗺️ Lập Kế Hoạch & Tối Ưu Tuyến Đường Du Lịch")
+st.caption("Ứng dụng thuật toán Vét cạn (Brute Force) & Mạng lưới Giao thông Đường bộ OSRM")
+
+st.sidebar.header("📍 Cấu hình Lộ trình")
+
+# 1. Nhập điểm xuất phát
+start_input = st.sidebar.text_input(
+    "1. Điểm xuất phát (Địa chỉ/Tọa độ/Link Maps):",
+    value="10.6865, 106.5942",
+    help="Bạn có thể dán tọa độ GPS, gõ địa chỉ hoặc dán đường link Google Maps"
+)
+
+# 2. Nhập số lượng điểm đến
+num_destinations = st.sidebar.number_input(
+    "2. Số lượng điểm muốn đến:",
+    min_value=2,
+    max_value=8,
+    value=3,
+    step=1
+)
+
+st.sidebar.subheader("3. Nhập danh sách các điểm tham quan:")
+
+default_places = [
+    "Dinh Độc Lập, Quận 1",
+    "Chợ Bến Thành, Quận 1",
+    "Chùa Bát Bửu Phật Đài, Bình Chánh",
+    "Bến Nhà Rồng, Quận 4",
+    "Khu di tích Lăng Le Bàu Cò, Bình Chánh",
+    "Công viên Lê Thị Riêng, Quận 10",
+    "Đầm Sen, Quận 11",
+    "Bưu điện Trung tâm Sài Gòn"
+]
+
+destination_inputs = []
+for i in range(num_destinations):
+    default_val = default_places[i] if i < len(default_places) else ""
+    dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", value=default_val, key=f"dest_{i}")
+    destination_inputs.append(dest_str)
 
 # ---------------------------------------------------------
-# 4. GIAO DIỆN WEB
+# 3. TÍNH TOÁN, TỐI ƯU VÀ VẼ BẢN ĐỒ LỘ TRÌNH THỰC TẾ
 # ---------------------------------------------------------
-st.title("🗺️ HỆ THỐNG TỐI ƯU HÓA TUYẾN ĐƯỜNG DU LỊCH")
-st.caption("Cho phép tự nhập địa chỉ nhà riêng hoặc Tọa độ Google Maps")
-
-col_left, col_right = st.columns([1.1, 0.9])
-
-with col_left:
-    st.subheader("1. Thiết lập Hành trình")
-    
-    start_type = st.radio("Chọn phương thức nhập **ĐIỂM XUẤT PHÁT**:", ["Nhập Địa chỉ nhà / Tọa độ Google Maps", "Chọn từ danh sách địa điểm có sẵn"])
-    
-    start_name = ""
-    start_coords = None
-    
-    if start_type == "Nhập Địa chỉ nhà / Tọa độ Google Maps":
-        custom_input = st.text_input(
-            "Nhập địa chỉ nhà hoặc Dán tọa độ Google Maps:", 
-            value="10.6865, 106.5942",
-            help="Ví dụ địa chỉ: 123 Đường Bến Lức, Bình Chánh, TP.HCM OR Dán tọa độ: 10.6865, 106.5942"
-        )
-        start_name = f"Điểm xuất phát ({custom_input})"
+if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="primary"):
+    with st.spinner("Đang truy xuất tọa độ và vẽ tuyến đường giao thông thực tế..."):
         
-        if custom_input:
-            with st.spinner("Đang định vị vị trí của bạn..."):
-                start_coords = smart_geocode(custom_input)
-                if start_coords:
-                    st.success(f"📍 Đã định vị thành công! Tọa độ GPS: `{start_coords[0]:.4f}, {start_coords[1]:.4f}`")
-                else:
-                    st.error("❌ Không thể tìm thấy địa chỉ này. Bạn hãy thử dán Tọa độ GPS từ Google Maps nhé!")
-    else:
-        selected_start_poi = st.selectbox("Chọn điểm xuất phát:", list(POI_DATA.keys()))
-        start_name = selected_start_poi
-        start_coords = POI_DATA[selected_start_poi]["coords"]
-
-    st.divider()
-    all_poi_names = list(POI_DATA.keys())
-    available_stops = [p for p in all_poi_names if p != start_name]
-    
-    selected_stops = st.multiselect("📌 Chọn các điểm tham quan bạn muốn ghé thăm:", available_stops, default=available_stops[:2])
-    btn_calculate = st.button("🚀 TÌM LỘ TRÌNH TỐI ƯU NHẤT", type="primary", use_container_width=True)
-
-with col_right:
-    st.subheader("📸 Hình ảnh các điểm tham quan đã chọn")
-    if not selected_stops:
-        st.info("Vui lòng chọn ít nhất 1 địa điểm tham quan bên trái để xem hình ảnh.")
-    else:
-        for name in selected_stops:
-            with st.container():
-                st.markdown(f"#### 📍 {name}")
-                st.image(POI_DATA[name]["image"], caption=name, use_container_width=True)
-                st.caption(POI_DATA[name]["desc"])
-                st.divider()
-
-if btn_calculate:
-    if not start_coords:
-        st.error("Vui lòng kiểm tra lại Điểm xuất phát trước khi tính toán!")
-    elif not selected_stops:
-        st.warning("Vui lòng chọn ít nhất 1 địa điểm tham quan!")
-    else:
-        full_coords = [start_coords] + [POI_DATA[p]["coords"] for p in selected_stops]
-        
-        with st.spinner("Đang truy vấn dữ liệu bản đồ và tính toán tuyến đường ngắn nhất..."):
-            dist_matrix = get_distance_matrix(full_coords)
+        # Bước A: Giải mã tọa độ Điểm xuất phát
+        start_coords = smart_geocode(start_input)
+        if not start_coords:
+            st.error("❌ Không thể xác định vị trí Điểm xuất phát. Vui lòng kiểm tra lại!")
+            st.stop()
             
-            if dist_matrix:
-                n = len(selected_stops)
-                middle_indices = list(range(1, n + 1))
+        # Bước B: Giải mã tọa độ các điểm đến
+        valid_points = [("Điểm xuất phát", start_coords)]
+        geocode_table = [{"Mục": "Xuất phát", "Địa chỉ nhập": start_input, "Tọa độ GPS": f"{start_coords[0]}, {start_coords[1]}"}]
+        has_error = False
+
+        for i, dest_text in enumerate(destination_inputs):
+            if not dest_text.strip():
+                st.warning(f"⚠️ Địa điểm {i+1} đang trống!")
+                has_error = True
+                continue
+                
+            coords = smart_geocode(dest_text)
+            if coords:
+                valid_points.append((dest_text.strip(), coords))
+                geocode_table.append({"Mục": f"Điểm {i+1}", "Địa chỉ nhập": dest_text, "Tọa độ GPS": f"{coords[0]}, {coords[1]}"})
+            else:
+                st.error(f"❌ Không tìm thấy tọa độ cho: '{dest_text}'")
+                has_error = True
+
+        if has_error or len(valid_points) - 1 < 2:
+            st.warning("⚠️ Cần ít nhất 2 địa điểm hợp lệ để tiến hành tối ưu.")
+            st.stop()
+
+        # Hiển thị Bảng Tọa độ trích xuất thành công
+        st.subheader("📌 Tọa độ GPS thực tế của các địa điểm:")
+        st.dataframe(geocode_table, use_container_width=True)
+
+        # Bước C: Lấy Ma trận Khoảng cách Đường bộ (Driving Matrix) từ OSRM
+        coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in valid_points])
+        osrm_table_url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
+        
+        try:
+            res_table = requests.get(osrm_table_url, timeout=5).json()
+            if "distances" in res_table:
+                # Chuyển đổi mét -> km
+                matrix = [[round(d / 1000.0, 2) for d in row] for row in res_table["distances"]]
+                
+                # Thuật toán Vét cạn (Brute Force)
+                num_targets = len(valid_points) - 1
+                target_indices = list(range(1, num_targets + 1))
                 
                 best_dist = float('inf')
-                best_order = []
+                best_path = []
                 
-                for perm in itertools.permutations(middle_indices):
-                    current_order = [0] + list(perm) + [0]
-                    current_dist = sum(dist_matrix[current_order[i]][current_order[i+1]] for i in range(len(current_order)-1))
+                for perm in itertools.permutations(target_indices):
+                    current_path = [0] + list(perm) + [0]
+                    current_dist = sum(matrix[current_path[i]][current_path[i+1]] for i in range(len(current_path)-1))
                     
                     if current_dist < best_dist:
                         best_dist = current_dist
-                        best_order = current_order
+                        best_path = current_path
                 
-                st.success(f"✅ **ĐÃ TÌM THẤY LỘ TRÌNH TỐI ƯU!** | Tổng quãng đường: **{best_dist:.2f} km**")
+                # Bước D: Hiển thị Kết quả
+                st.divider()
+                st.success(f"🎉 **Đã hoàn thành tối ưu!** Tổng quãng đường lái xe thực tế: **{round(best_dist, 2)} km**")
                 
-                st.subheader("🚩 Thứ tự di chuyển đề xuất:")
-                final_names = [start_name] + [selected_stops[i-1] for i in best_order[1:-1]] + [start_name]
+                # 1. Thứ tự di chuyển
+                st.subheader("📋 Thứ tự di chuyển tối ưu đề xuất:")
+                ordered_points = [valid_points[idx] for idx in best_path]
                 
-                for idx, name in enumerate(final_names):
-                    if idx == 0:
-                        st.markdown(f"🚀 **Điểm xuất phát:** {name}")
-                    elif idx == len(final_names) - 1:
-                        st.markdown(f"🏁 **Kết thúc:** Quay về {name}")
+                gmaps_coords = []
+                for step, (name, coords) in enumerate(ordered_points):
+                    gmaps_coords.append(f"{coords[0]},{coords[1]}")
+                    if step == 0:
+                        st.write(f"🚩 **Điểm xuất phát:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
+                    elif step == len(ordered_points) - 1:
+                        st.write(f"🏁 **Trở về:** Điểm xuất phát")
                     else:
-                        st.markdown(f"📍 **Chặng {idx}:** {name}")
+                        st.write(f"🔹 **Bước {step}:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
+
+                # Link mở Google Maps
+                gmaps_url = f"https://www.google.com/maps/dir/{'/'.join(gmaps_coords)}"
+                st.markdown(f"[🔗 **Mở Lộ trình này trên Google Maps Navigation**]({gmaps_url})")
+
+                # 2. Lấy hình dạng tuyến đường giao thông (Polylines/Route) và Vẽ Bản đồ Folium
+                st.divider()
+                st.subheader("🗺️ Bản đồ mô phỏng đường đi ngoài thực tế (Road Network Route)")
+                st.caption("Các đường nét đứt màu xanh navy bám sát theo từng con phố, ngã tư thực tế chứ không phải đường thẳng.")
+
+                # Khởi tạo bản đồ Folium đặt góc nhìn tại điểm xuất phát
+                m = folium.Map(location=start_coords, zoom_start=12, tiles="OpenStreetMap")
                 
-                origin_str = f"{start_coords[0]},{start_coords[1]}"
-                waypoints_str = "|".join([f"{POI_DATA[p]['coords'][0]},{POI_DATA[p]['coords'][1]}" for p in selected_stops])
+                # Đánh dấu các ghim (Markers) trên bản đồ
+                for step, (name, coords) in enumerate(ordered_points[:-1]): # Bỏ điểm cuối trùng điểm đầu
+                    icon_color = "red" if step == 0 else "blue"
+                    popup_text = f"Xuất phát: {name}" if step == 0 else f"Điểm {step}: {name}"
+                    folium.Marker(
+                        location=coords,
+                        popup=popup_text,
+                        tooltip=f"{step}. {name}",
+                        icon=folium.Icon(color=icon_color, icon="info-sign" if step != 0 else "home")
+                    ).add_to(m)
+
+                # Truy vấn OSRM Route Service để vẽ đường cong thực tế giữa các điểm nối tiếp nhau
+                route_coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in ordered_points])
+                osrm_route_url = f"http://router.project-osrm.org/route/v1/driving/{route_coords_str}?overview=full&geometries=geojson"
                 
-                gmaps_url = f"https://www.google.com/maps/dir/?api=1&origin={origin_str}&destination={origin_str}&waypoints={waypoints_str}&travelmode=driving"
-                
-                st.markdown(f"👉 **[BẤM VÀO ĐÂY ĐỂ MỞ DẪN ĐƯỜNG TRỰC TIẾP TRÊN GOOGLE MAPS]({gmaps_url})**")
+                res_route = requests.get(osrm_route_url, timeout=5).json()
+                if "routes" in res_route and len(res_route["routes"]) > 0:
+                    geometry = res_route["routes"][0]["geometry"]["coordinates"]
+                    # Chuyển [lon, lat] từ GeoJSON thành [lat, lon] cho Folium
+                    folium_line = [[lat, lon] for lon, lat in geometry]
+                    
+                    # Vẽ đường lộ giao thông thực tế lên bản đồ
+                    folium.PolyLine(
+                        folium_line,
+                        color="#1A365D",
+                        weight=5,
+                        opacity=0.8,
+                        dash_array='10',
+                        tooltip="Tuyến đường di chuyển thực tế"
+                    ).add_to(m)
+
+                # Hiển thị Bản đồ tương tác trên web
+                st_folium(m, width=1100, height=500)
+
+        except Exception as e:
+            st.error(f"Lỗi khi xử lý dữ liệu bản đồ đường bộ OSRM: {e}")
