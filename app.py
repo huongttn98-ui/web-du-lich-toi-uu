@@ -8,14 +8,14 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="Tối ưu lộ trình du lịch thực tế", page_icon="🗺️", layout="wide")
 
 # ---------------------------------------------------------
-# 1. HÀM CHUYỂN ĐỔI ĐỊA CHỈ / TỌA ĐỘ THÔNG MINH (SMART GEOCODING)
+# HÀM CHUYỂN ĐỔI ĐỊA CHỈ / TỌA ĐỘ THÔNG MINH (CẬP NHẬT MỚI)
 # ---------------------------------------------------------
 def smart_geocode(input_str):
     if not input_str or not input_str.strip():
         return None
     clean_str = input_str.strip()
     
-    # Ưu tiên 1: Người dùng dán Link Google Maps (Bắt chuỗi dạng @lat,lon)
+    # 1. Ưu tiên 1: Người dùng dán Link Google Maps (Bắt chuỗi dạng @lat,lon)
     gmaps_link_pattern = r'@(-?\d+\.\d+),(-?\d+\.\d+)'
     gmaps_match = re.search(gmaps_link_pattern, clean_str)
     if gmaps_match:
@@ -23,7 +23,7 @@ def smart_geocode(input_str):
         lon = round(float(gmaps_match.group(2)), 6)
         return (lat, lon)
 
-    # Ưu tiên 2: Người dùng dán trực tiếp Tọa độ GPS (VD: 10.7769, 106.6953)
+    # 2. Ưu tiên 2: Người dùng dán trực tiếp Tọa độ GPS (VD: 10.7769, 106.6953)
     coord_pattern = r'^(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)$'
     match = re.match(coord_pattern, clean_str)
     if match:
@@ -32,23 +32,24 @@ def smart_geocode(input_str):
         if -90 <= lat <= 90 and -180 <= lon <= 180:
             return (lat, lon)
 
-    # Ưu tiên 3: Tìm kiếm địa chỉ tự động qua Mapbox API (Ưu tiên TP.HCM)
+    # 3. Ưu tiên 3: Tìm kiếm địa chỉ qua OpenStreetMap Nominatim (Miễn phí & Không cần Token)
     search_text = clean_str
     if "Hồ Chí Minh" not in search_text and "TPHCM" not in search_text and "Việt Nam" not in search_text:
         search_text += ", Hồ Chí Minh, Việt Nam"
         
-    mapbox_token = "pk.eyJ1IjoibWFwYm94LWRlbW8iLCJhIjoiY2p4OTBsNGtwMDJhZDN5b2Nmd3V3dnE2OSJ9.R43s2oOvhg0T4a0Mv1K2mQ"
-    mapbox_url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(search_text)}.json?access_token={mapbox_token}&country=vn&proximity=106.69,10.77&limit=1"
+    nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(search_text)}&format=json&limit=1"
+    headers = {"User-Agent": "TourismApp_ResearchProject/3.0 (contact: student@school.edu.vn)"}
+    
     try:
-        res = requests.get(mapbox_url, timeout=4).json()
-        if res.get("features"):
-            coords = res["features"][0]["center"]  # Mapbox trả về [lon, lat]
-            return (round(coords[1], 6), round(coords[0], 6))
+        res = requests.get(nom_url, headers=headers, timeout=5).json()
+        if res and len(res) > 0:
+            lat = round(float(res[0]["lat"]), 6)
+            lon = round(float(res[0]["lon"]), 6)
+            return (lat, lon)
     except:
         pass
 
     return None
-
 # ---------------------------------------------------------
 # 2. GIAO DIỆN & CẤU HÌNH ĐẦU VÀO
 # ---------------------------------------------------------
