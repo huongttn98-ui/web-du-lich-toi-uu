@@ -14,20 +14,31 @@ st.set_page_config(
     layout="wide"
 )
 
-# Khởi tạo danh sách địa điểm mặc định
+# Khởi tạo danh sách địa điểm TRỐNG
 if "selected_places" not in st.session_state:
     st.session_state["selected_places"] = []
 
-# Khóa lưu kết quả tính toán (Chống mất khi rerun)
+# Khóa lưu kết quả tính toán
 if "calculation_result" not in st.session_state:
     st.session_state["calculation_result"] = None
 
 def add_place_to_list(place_name):
-    """Thêm địa điểm vào danh sách và buộc trang web làm mới giao diện ngay lập tức"""
+    """Thêm địa điểm và tự động điền vào ô input trống đầu tiên"""
     if place_name not in st.session_state["selected_places"]:
         st.session_state["selected_places"].append(place_name)
+        
+        # Điền trực tiếp vào ô input trống trong Sidebar
+        for i in range(12): # Số lượng ô tối đa
+            key_name = f"input_place_{i}"
+            if key_name in st.session_state and not st.session_state[key_name]:
+                st.session_state[key_name] = place_name
+                break
+            elif key_name not in st.session_state:
+                st.session_state[key_name] = place_name
+                break
+
         st.toast(f"✅ Đã thêm '{place_name}' vào danh sách!", icon="📍")
-        st.rerun() # Làm mới giao diện ngay để hiện ở Sidebar
+        st.rerun()
     else:
         st.toast(f"⚠️ '{place_name}' đã có trong danh sách!", icon="ℹ️")
 
@@ -59,7 +70,7 @@ def smart_geocode(input_str):
 
     for query in [search_text_full, search_query]:
         nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(query)}&format=json&limit=1"
-        headers = {"User-Agent": "TourismRouteOptimizerApp/8.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/10.0"}
         try:
             res = requests.get(nom_url, headers=headers, timeout=4).json()
             if res and len(res) > 0:
@@ -77,7 +88,7 @@ def get_place_info_wikipedia(place_name):
     wiki_search_url = f"https://vi.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean_name)}&format=json"
     
     try:
-        headers = {"User-Agent": "TourismRouteOptimizerApp/8.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/10.0"}
         search_res = requests.get(wiki_search_url, headers=headers, timeout=3).json()
         search_results = search_res.get("query", {}).get("search", [])
         
@@ -104,7 +115,7 @@ def get_place_info_wikipedia(place_name):
     }
 
 # =========================================================
-# PHẦN A: CẨM NANG DU LỊCH & KHÁM PHÁ TP.HCM (GIAO DIỆN PHÍA TRÊN)
+# PHẦN A: CẨM NANG DU LỊCH & KHÁM PHÁ TP.HCM
 # =========================================================
 st.title("🏙️ Cẩm Nang Du Lịch & Khám Phá TP. Hồ Chí Minh")
 st.caption("Khám phá danh thắng nổi tiếng và bấm chọn trực tiếp để lập lộ trình di chuyển tối ưu nhất")
@@ -116,7 +127,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📍 Khám Phá Bình Chánh"
 ])
 
-# ---- TAB 1 ----
 with tab1:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -143,7 +153,6 @@ with tab1:
         if st.button("➕ Chọn điểm này", key="btn_ben_nha_rong"):
             add_place_to_list("Bến Nhà Rồng, Quận 4")
 
-# ---- TAB 2 ----
 with tab2:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -170,7 +179,6 @@ with tab2:
         if st.button("➕ Chọn điểm này", key="btn_phat_co_don"):
             add_place_to_list("Chùa Bát Bửu Phật Đài, Bình Chánh")
 
-# ---- TAB 3 ----
 with tab3:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -197,7 +205,6 @@ with tab3:
         if st.button("➕ Chọn điểm này", key="btn_suoi_tien"):
             add_place_to_list("Khu du lịch Suối Tiên, TP. Thủ Đức")
 
-# ---- TAB 4 ----
 with tab4:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -227,7 +234,7 @@ with tab4:
 st.divider()
 
 # =========================================================
-# PHẦN B: CÔNG CỤ TỐI ƯU LỘ TRÌNH (GIAO DIỆN PHÍA DƯỚI)
+# PHẦN B: CÔNG CỤ TỐI ƯU LỘ TRÌNH (SIDEBAR & KẾT QUẢ)
 # =========================================================
 st.subheader("🛠️ Công Cụ Lập Kế Hoạch & Tối Ưu Lộ Trình Di Chuyển")
 st.caption("Ứng dụng thuật toán Vét cạn (Brute Force / TSP) & Mạng lưới Giao thông Đường bộ OSRM")
@@ -240,30 +247,30 @@ start_input = st.sidebar.text_input(
     help="Nhập tọa độ, tên địa chỉ hoặc dán Link Google Maps"
 )
 
-# Lấy danh sách điểm từ Session State
-current_list = st.session_state["selected_places"]
-
-# Tự động đồng bộ số lượng điểm với danh sách đang có
 num_destinations = st.sidebar.number_input(
     "2. Số lượng điểm tham quan:",
     min_value=2,
     max_value=12,
-    value=max(2, len(current_list)),
+    value=max(2, len(st.session_state["selected_places"])),
     step=1
 )
 
 st.sidebar.subheader("3. Danh sách điểm chọn:")
 destination_inputs = []
 
-# Đọc danh sách trực tiếp từ session_state để điền vào các ô nhập
+# Tải và giữ đồng bộ trạng thái của các ô nhập liệu
 for i in range(num_destinations):
-    val = current_list[i] if i < len(current_list) else ""
-    dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", value=val, key=f"input_place_{i}")
+    key_name = f"input_place_{i}"
+    if key_name not in st.session_state:
+        st.session_state[key_name] = st.session_state["selected_places"][i] if i < len(st.session_state["selected_places"]) else ""
+    
+    dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", key=key_name)
     destination_inputs.append(dest_str)
 
-# Nút dọn dẹp lại danh sách nếu muốn chọn lại từ đầu
-if st.sidebar.button("🗑️ Xóa danh sách để chọn lại"):
+if st.sidebar.button("🗑️ Xóa sạch danh sách"):
     st.session_state["selected_places"] = []
+    for i in range(12):
+        st.session_state[f"input_place_{i}"] = ""
     st.session_state["calculation_result"] = None
     st.rerun()
 
@@ -296,10 +303,9 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                 has_error = True
 
         if has_error or len(valid_points) - 1 < 2:
-            st.warning("⚠️ Cần ít nhất 2 địa điểm tham quan hợp lệ để tiến hành tối ưu.")
+            st.warning("⚠️ Cần nhập ít nhất 2 địa điểm tham quan hợp lệ để tiến hành tối ưu.")
             st.stop()
 
-        # Gọi API OSRM Matrix
         coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in valid_points])
         osrm_table_url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
         
@@ -322,7 +328,6 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                         best_dist = current_dist
                         best_path = current_path
                 
-                # Gọi OSRM Route API vẽ đường
                 ordered_points = [valid_points[idx] for idx in best_path]
                 route_coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in ordered_points])
                 osrm_route_url = f"http://router.project-osrm.org/route/v1/driving/{route_coords_str}?overview=full&geometries=geojson"
@@ -333,7 +338,6 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                     geometry = res_route["routes"][0]["geometry"]["coordinates"]
                     folium_line = [[lat, lon] for lon, lat in geometry]
 
-                # Lưu vào Session State
                 st.session_state["calculation_result"] = {
                     "geocode_table": geocode_table,
                     "best_dist": best_dist,
@@ -357,7 +361,6 @@ if st.session_state["calculation_result"] is not None:
 
     st.success(f"🎉 **Đã tìm ra lộ trình ngắn nhất!** Tổng quãng đường lái xe thực tế: **{round(res['best_dist'], 2)} km**")
     
-    # 1. Liệt kê thứ tự
     st.markdown("### 📋 Thứ tự di chuyển tối ưu đề xuất:")
     gmaps_coords = []
     for step, (name, coords) in enumerate(res["ordered_points"]):
@@ -372,7 +375,6 @@ if st.session_state["calculation_result"] is not None:
     gmaps_url = f"https://www.google.com/maps/dir/{'/'.join(gmaps_coords)}"
     st.markdown(f"🔗 **[👉 Mở lộ trình di chuyển này trên ứng dụng Google Maps Navigation]({gmaps_url})**")
 
-    # 2. Thông tin & Ảnh Wikipedia
     st.divider()
     st.markdown("### 🏛️ Hình ảnh & Giới thiệu chi tiết các điểm trong lộ trình")
     
@@ -395,7 +397,6 @@ if st.session_state["calculation_result"] is not None:
             st.write("---")
         c_idx += 1
 
-    # 3. Bản đồ Folium
     st.divider()
     st.markdown("### 🗺️ Bản đồ mô phỏng đường đi thực tế (OSRM Route)")
     st.caption("Tuyến đường màu xanh navy thể hiện chi tiết luồng giao thông thực tế bám sát hạ tầng đường bộ.")
