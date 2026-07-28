@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Khởi tạo trạng thái bộ nhớ lưu danh sách địa điểm chọn từ Cẩm nang
+# 1. Khởi tạo danh sách địa điểm chọn từ Cẩm nang
 if "selected_places" not in st.session_state:
     st.session_state["selected_places"] = [
         "Dinh Độc Lập, Quận 1",
@@ -22,14 +22,17 @@ if "selected_places" not in st.session_state:
         "Chùa Bát Bửu Phật Đài, Bình Chánh"
     ]
 
+# 2. KHÓA LƯU KẾT QUẢ TÍNH TOÁN (Chống biến mất khi rerun)
+if "calculation_result" not in st.session_state:
+    st.session_state["calculation_result"] = None
+
 def add_place_to_list(place_name):
     """Hàm xử lý khi bấm nút '➕ Chọn điểm này' từ Cẩm nang"""
     if place_name not in st.session_state["selected_places"]:
-        # Thay thế hoặc chèn thêm vào danh sách
         st.session_state["selected_places"].append(place_name)
-        st.toast(f"✅ Đã thêm '{place_name}' vào danh sách tính toán lộ trình!", icon="📍")
+        st.toast(f"✅ Đã thêm '{place_name}' vào danh sách!", icon="📍")
     else:
-        st.toast(f"⚠️ '{place_name}' đã có trong danh sách chọn!", icon="ℹ️")
+        st.toast(f"⚠️ '{place_name}' đã có trong danh sách!", icon="ℹ️")
 
 # ---------------------------------------------------------
 # 1. HÀM CHUYỂN ĐỔI TỌA ĐỘ THÔNG MINH (SMART GEOCODING)
@@ -39,13 +42,13 @@ def smart_geocode(input_str):
         return None
     clean_str = input_str.strip()
     
-    # Ưu tiên 1: Link Google Maps (Bắt chuỗi @lat,lon)
+    # 1. Link Google Maps
     gmaps_link_pattern = r'@(-?\d+\.\d+),(-?\d+\.\d+)'
     gmaps_match = re.search(gmaps_link_pattern, clean_str)
     if gmaps_match:
         return (round(float(gmaps_match.group(1)), 6), round(float(gmaps_match.group(2)), 6))
 
-    # Ưu tiên 2: Tọa độ GPS trực tiếp (VD: 10.7769, 106.6953)
+    # 2. Tọa độ GPS trực tiếp
     coord_pattern = r'^(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)$'
     match = re.match(coord_pattern, clean_str)
     if match:
@@ -53,13 +56,13 @@ def smart_geocode(input_str):
         if -90 <= lat <= 90 and -180 <= lon <= 180:
             return (round(lat, 6), round(lon, 6))
 
-    # Ưu tiên 3: Tìm kiếm tên qua OpenStreetMap Nominatim
+    # 3. OpenStreetMap Nominatim
     search_query = clean_str.split(',')[0].strip()
     search_text_full = f"{clean_str}, Hồ Chí Minh, Việt Nam" if "Hồ Chí Minh" not in clean_str else clean_str
 
     for query in [search_text_full, search_query]:
         nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(query)}&format=json&limit=1"
-        headers = {"User-Agent": "TourismRouteOptimizerApp/6.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/7.0"}
         try:
             res = requests.get(nom_url, headers=headers, timeout=4).json()
             if res and len(res) > 0:
@@ -77,7 +80,7 @@ def get_place_info_wikipedia(place_name):
     wiki_search_url = f"https://vi.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean_name)}&format=json"
     
     try:
-        headers = {"User-Agent": "TourismRouteOptimizerApp/6.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/7.0"}
         search_res = requests.get(wiki_search_url, headers=headers, timeout=3).json()
         search_results = search_res.get("query", {}).get("search", [])
         
@@ -232,7 +235,6 @@ st.divider()
 st.subheader("🛠️ Công Cụ Lập Kế Hoạch & Tối Ưu Lộ Trình Di Chuyển")
 st.caption("Ứng dụng thuật toán Vét cạn (Brute Force / TSP) & Mạng lưới Giao thông Đường bộ OSRM")
 
-# Sidebar cấu hình
 st.sidebar.header("📍 Cấu hình Lộ trình")
 
 start_input = st.sidebar.text_input(
@@ -241,7 +243,6 @@ start_input = st.sidebar.text_input(
     help="Nhập tọa độ, tên địa chỉ hoặc dán Link Google Maps"
 )
 
-# Lấy danh sách điểm từ Session State
 current_list = st.session_state["selected_places"]
 num_destinations = st.sidebar.number_input(
     "2. Số lượng điểm tham quan:",
@@ -259,17 +260,17 @@ for i in range(num_destinations):
     dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", value=default_val, key=f"dest_input_{i}")
     destination_inputs.append(dest_str)
 
-# Nút xử lý chính
+# ---------------------------------------------------------
+# XỬ LÝ TÍNH TOÁN VÀ LƯU VÀO SESSION STATE
+# ---------------------------------------------------------
 if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="primary"):
     with st.spinner("Đang tính toán lộ trình giao thông thực tế và thu thập thông tin..."):
         
-        # Bước 1: Giải mã điểm xuất phát
         start_coords = smart_geocode(start_input)
         if not start_coords:
             st.error("❌ Không thể xác định vị trí Điểm xuất phát. Vui lòng kiểm tra lại nhập liệu!")
             st.stop()
             
-        # Bước 2: Giải mã danh sách địa điểm
         valid_points = [("Điểm xuất phát", start_coords)]
         geocode_table = [{"Mục": "Xuất phát", "Địa điểm nhập": start_input, "Tọa độ GPS": f"{start_coords[0]}, {start_coords[1]}"}]
         places_info = {}
@@ -291,11 +292,7 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
             st.warning("⚠️ Cần ít nhất 2 địa điểm tham quan hợp lệ để tiến hành tối ưu.")
             st.stop()
 
-        # Hiển thị bảng tọa độ đã trích xuất
-        st.markdown("#### 📌 Tọa độ GPS các điểm đã xác định thành công:")
-        st.dataframe(geocode_table, use_container_width=True)
-
-        # Bước 3: Gọi OSRM Matrix API tính khoảng cách bánh xe lăn
+        # Gọi API OSRM
         coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in valid_points])
         osrm_table_url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
         
@@ -304,7 +301,6 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
             if "distances" in res_table:
                 matrix = [[round(d / 1000.0, 2) for d in row] for row in res_table["distances"]]
                 
-                # Thuật toán Vét cạn (Brute Force / TSP)
                 num_targets = len(valid_points) - 1
                 target_indices = list(range(1, num_targets + 1))
                 
@@ -319,85 +315,104 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                         best_dist = current_dist
                         best_path = current_path
                 
-                # Bước 4: Hiển thị Kết quả
-                st.success(f"🎉 **Đã tìm ra lộ trình ngắn nhất!** Tổng quãng đường lái xe thực tế: **{round(best_dist, 2)} km**")
-                
-                # A. Liệt kê thứ tự di chuyển & Google Maps link
-                st.markdown("### 📋 Thứ tự di chuyển tối ưu đề xuất:")
-                ordered_points = [valid_points[idx] for idx in best_path]
-                
-                gmaps_coords = []
-                for step, (name, coords) in enumerate(ordered_points):
-                    gmaps_coords.append(f"{coords[0]},{coords[1]}")
-                    if step == 0:
-                        st.write(f"🚩 **Khởi hành:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
-                    elif step == len(ordered_points) - 1:
-                        st.write(f"🏁 **Kết thúc:** Trở về Điểm xuất phát")
-                    else:
-                        st.write(f"🔹 **Thứ tự {step}:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
-
-                gmaps_url = f"https://www.google.com/maps/dir/{'/'.join(gmaps_coords)}"
-                st.markdown(f"🔗 **[👉 Mở lộ trình di chuyển này trên ứng dụng Google Maps Navigation]({gmaps_url})**")
-
-                # B. Hiển thị thông tin & Hình ảnh các địa điểm trong Lộ trình
-                st.divider()
-                st.markdown("### 🏛️ Hình ảnh & Giới thiệu chi tiết các điểm trong lộ trình")
-                
-                col_list = st.columns(min(len(ordered_points) - 2, 3))
-                c_idx = 0
-                
-                for step, (name, coords) in enumerate(ordered_points[1:-1], 1):
-                    info = places_info.get(name, {
-                        "title": name, 
-                        "description": "Địa điểm tham quan du lịch.", 
-                        "image_url": "https://images.unsplash.com/photo-1503220317375-aaad61436b1b?auto=format&fit=crop&w=600&q=80"
-                    })
-                    
-                    with col_list[c_idx % len(col_list)]:
-                        st.markdown(f"#### {step}. {info['title']}")
-                        if info.get("image_url"):
-                            st.image(info["image_url"], use_column_width=True)
-                        st.caption(f"📍 Tọa độ: {coords[0]}, {coords[1]}")
-                        st.write(info["description"])
-                        st.write("---")
-                    c_idx += 1
-
-                # C. Bản đồ Folium uốn lượn đường thực tế
-                st.divider()
-                st.markdown("### 🗺️ Bản đồ mô phỏng đường đi thực tế (OSRM Route)")
-                st.caption("Tuyến đường màu xanh navy thể hiện chi tiết luồng giao thông thực tế bám sát hạ tầng đường bộ.")
-
-                m = folium.Map(location=start_coords, zoom_start=12, tiles="OpenStreetMap")
-                
-                for step, (name, coords) in enumerate(ordered_points[:-1]):
-                    icon_color = "red" if step == 0 else "blue"
-                    popup_text = f"Xuất phát: {name}" if step == 0 else f"Thứ tự {step}: {name}"
-                    folium.Marker(
-                        location=coords,
-                        popup=popup_text,
-                        tooltip=f"{step}. {name}",
-                        icon=folium.Icon(color=icon_color, icon="info-sign" if step != 0 else "home")
-                    ).add_to(m)
-
                 # Gọi OSRM Route API vẽ đường uốn lượn
+                ordered_points = [valid_points[idx] for idx in best_path]
                 route_coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in ordered_points])
                 osrm_route_url = f"http://router.project-osrm.org/route/v1/driving/{route_coords_str}?overview=full&geometries=geojson"
                 
                 res_route = requests.get(osrm_route_url, timeout=6).json()
+                folium_line = []
                 if "routes" in res_route and len(res_route["routes"]) > 0:
                     geometry = res_route["routes"][0]["geometry"]["coordinates"]
                     folium_line = [[lat, lon] for lon, lat in geometry]
-                    
-                    folium.PolyLine(
-                        folium_line,
-                        color="#1A365D",
-                        weight=5,
-                        opacity=0.85,
-                        dash_array='8',
-                        tooltip="Tuyến đường thực tế"
-                    ).add_to(m)
 
-                st_folium(m, width=1100, height=500)
+                # LƯU TOÀN BỘ KẾT QUẢ VÀO SESSION STATE
+                st.session_state["calculation_result"] = {
+                    "geocode_table": geocode_table,
+                    "best_dist": best_dist,
+                    "ordered_points": ordered_points,
+                    "places_info": places_info,
+                    "folium_line": folium_line,
+                    "start_coords": start_coords
+                }
 
         except Exception as e:
             st.error(f"Xảy ra lỗi kết nối OSRM: {e}")
+
+# =========================================================
+# HIỂN THỊ KẾT QUẢ (NẾU ĐÃ CÓ TRONG SESSION STATE)
+# =========================================================
+if st.session_state["calculation_result"] is not None:
+    res = st.session_state["calculation_result"]
+    
+    st.markdown("#### 📌 Tọa độ GPS các điểm đã xác định thành công:")
+    st.dataframe(res["geocode_table"], use_container_width=True)
+
+    st.success(f"🎉 **Đã tìm ra lộ trình ngắn nhất!** Tổng quãng đường lái xe thực tế: **{round(res['best_dist'], 2)} km**")
+    
+    # 1. Liệt kê thứ tự & Link Google Maps
+    st.markdown("### 📋 Thứ tự di chuyển tối ưu đề xuất:")
+    gmaps_coords = []
+    for step, (name, coords) in enumerate(res["ordered_points"]):
+        gmaps_coords.append(f"{coords[0]},{coords[1]}")
+        if step == 0:
+            st.write(f"🚩 **Khởi hành:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
+        elif step == len(res["ordered_points"]) - 1:
+            st.write(f"🏁 **Kết thúc:** Trở về Điểm xuất phát")
+        else:
+            st.write(f"🔹 **Thứ tự {step}:** {name} *(Tọa độ: {coords[0]}, {coords[1]})*")
+
+    gmaps_url = f"https://www.google.com/maps/dir/{'/'.join(gmaps_coords)}"
+    st.markdown(f"🔗 **[👉 Mở lộ trình di chuyển này trên ứng dụng Google Maps Navigation]({gmaps_url})**")
+
+    # 2. Thông tin & Ảnh Wikipedia
+    st.divider()
+    st.markdown("### 🏛️ Hình ảnh & Giới thiệu chi tiết các điểm trong lộ trình")
+    
+    col_list = st.columns(min(len(res["ordered_points"]) - 2, 3))
+    c_idx = 0
+    
+    for step, (name, coords) in enumerate(res["ordered_points"][1:-1], 1):
+        info = res["places_info"].get(name, {
+            "title": name, 
+            "description": "Địa điểm tham quan du lịch.", 
+            "image_url": "https://images.unsplash.com/photo-1503220317375-aaad61436b1b?auto=format&fit=crop&w=600&q=80"
+        })
+        
+        with col_list[c_idx % len(col_list)]:
+            st.markdown(f"#### {step}. {info['title']}")
+            if info.get("image_url"):
+                st.image(info["image_url"], use_column_width=True)
+            st.caption(f"📍 Tọa độ: {coords[0]}, {coords[1]}")
+            st.write(info["description"])
+            st.write("---")
+        c_idx += 1
+
+    # 3. Bản đồ Folium
+    st.divider()
+    st.markdown("### 🗺️ Bản đồ mô phỏng đường đi thực tế (OSRM Route)")
+    st.caption("Tuyến đường màu xanh navy thể hiện chi tiết luồng giao thông thực tế bám sát hạ tầng đường bộ.")
+
+    m = folium.Map(location=res["start_coords"], zoom_start=12, tiles="OpenStreetMap")
+    
+    for step, (name, coords) in enumerate(res["ordered_points"][:-1]):
+        icon_color = "red" if step == 0 else "blue"
+        popup_text = f"Xuất phát: {name}" if step == 0 else f"Thứ tự {step}: {name}"
+        folium.Marker(
+            location=coords,
+            popup=popup_text,
+            tooltip=f"{step}. {name}",
+            icon=folium.Icon(color=icon_color, icon="info-sign" if step != 0 else "home")
+        ).add_to(m)
+
+    if res["folium_line"]:
+        folium.PolyLine(
+            res["folium_line"],
+            color="#1A365D",
+            weight=5,
+            opacity=0.85,
+            dash_array='8',
+            tooltip="Tuyến đường thực tế"
+        ).add_to(m)
+
+    st_folium(m, width=1100, height=500)
