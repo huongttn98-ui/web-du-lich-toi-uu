@@ -16,10 +16,7 @@ st.set_page_config(
 
 # Khởi tạo danh sách địa điểm mặc định
 if "selected_places" not in st.session_state:
-    st.session_state["selected_places"] = [
-        "Dinh Độc Lập, Quận 1",
-        "Chợ Bến Thành, Quận 1"
-    ]
+    st.session_state["selected_places"] = []
 
 # Khóa lưu kết quả tính toán (Chống mất khi rerun)
 if "calculation_result" not in st.session_state:
