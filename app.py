@@ -14,23 +14,23 @@ st.set_page_config(
     layout="wide"
 )
 
-# 1. Khởi tạo danh sách địa điểm chọn từ Cẩm nang
+# Khởi tạo danh sách địa điểm mặc định
 if "selected_places" not in st.session_state:
     st.session_state["selected_places"] = [
         "Dinh Độc Lập, Quận 1",
-        "Chợ Bến Thành, Quận 1",
-        "Chùa Bát Bửu Phật Đài, Bình Chánh"
+        "Chợ Bến Thành, Quận 1"
     ]
 
-# 2. KHÓA LƯU KẾT QUẢ TÍNH TOÁN (Chống biến mất khi rerun)
+# Khóa lưu kết quả tính toán (Chống mất khi rerun)
 if "calculation_result" not in st.session_state:
     st.session_state["calculation_result"] = None
 
 def add_place_to_list(place_name):
-    """Hàm xử lý khi bấm nút '➕ Chọn điểm này' từ Cẩm nang"""
+    """Thêm địa điểm vào danh sách và buộc trang web làm mới giao diện ngay lập tức"""
     if place_name not in st.session_state["selected_places"]:
         st.session_state["selected_places"].append(place_name)
         st.toast(f"✅ Đã thêm '{place_name}' vào danh sách!", icon="📍")
+        st.rerun() # Làm mới giao diện ngay để hiện ở Sidebar
     else:
         st.toast(f"⚠️ '{place_name}' đã có trong danh sách!", icon="ℹ️")
 
@@ -62,7 +62,7 @@ def smart_geocode(input_str):
 
     for query in [search_text_full, search_query]:
         nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(query)}&format=json&limit=1"
-        headers = {"User-Agent": "TourismRouteOptimizerApp/7.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/8.0"}
         try:
             res = requests.get(nom_url, headers=headers, timeout=4).json()
             if res and len(res) > 0:
@@ -80,7 +80,7 @@ def get_place_info_wikipedia(place_name):
     wiki_search_url = f"https://vi.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean_name)}&format=json"
     
     try:
-        headers = {"User-Agent": "TourismRouteOptimizerApp/7.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/8.0"}
         search_res = requests.get(wiki_search_url, headers=headers, timeout=3).json()
         search_results = search_res.get("query", {}).get("search", [])
         
@@ -243,7 +243,10 @@ start_input = st.sidebar.text_input(
     help="Nhập tọa độ, tên địa chỉ hoặc dán Link Google Maps"
 )
 
+# Lấy danh sách điểm từ Session State
 current_list = st.session_state["selected_places"]
+
+# Tự động đồng bộ số lượng điểm với danh sách đang có
 num_destinations = st.sidebar.number_input(
     "2. Số lượng điểm tham quan:",
     min_value=2,
@@ -255,10 +258,17 @@ num_destinations = st.sidebar.number_input(
 st.sidebar.subheader("3. Danh sách điểm chọn:")
 destination_inputs = []
 
+# Đọc danh sách trực tiếp từ session_state để điền vào các ô nhập
 for i in range(num_destinations):
-    default_val = current_list[i] if i < len(current_list) else ""
-    dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", value=default_val, key=f"dest_input_{i}")
+    val = current_list[i] if i < len(current_list) else ""
+    dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", value=val, key=f"input_place_{i}")
     destination_inputs.append(dest_str)
+
+# Nút dọn dẹp lại danh sách nếu muốn chọn lại từ đầu
+if st.sidebar.button("🗑️ Xóa danh sách để chọn lại"):
+    st.session_state["selected_places"] = []
+    st.session_state["calculation_result"] = None
+    st.rerun()
 
 # ---------------------------------------------------------
 # XỬ LÝ TÍNH TOÁN VÀ LƯU VÀO SESSION STATE
@@ -292,7 +302,7 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
             st.warning("⚠️ Cần ít nhất 2 địa điểm tham quan hợp lệ để tiến hành tối ưu.")
             st.stop()
 
-        # Gọi API OSRM
+        # Gọi API OSRM Matrix
         coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in valid_points])
         osrm_table_url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
         
@@ -315,7 +325,7 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                         best_dist = current_dist
                         best_path = current_path
                 
-                # Gọi OSRM Route API vẽ đường uốn lượn
+                # Gọi OSRM Route API vẽ đường
                 ordered_points = [valid_points[idx] for idx in best_path]
                 route_coords_str = ";".join([f"{lon},{lat}" for name, (lat, lon) in ordered_points])
                 osrm_route_url = f"http://router.project-osrm.org/route/v1/driving/{route_coords_str}?overview=full&geometries=geojson"
@@ -326,7 +336,7 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
                     geometry = res_route["routes"][0]["geometry"]["coordinates"]
                     folium_line = [[lat, lon] for lon, lat in geometry]
 
-                # LƯU TOÀN BỘ KẾT QUẢ VÀO SESSION STATE
+                # Lưu vào Session State
                 st.session_state["calculation_result"] = {
                     "geocode_table": geocode_table,
                     "best_dist": best_dist,
@@ -340,7 +350,7 @@ if st.sidebar.button("🚀 Bắt đầu tối ưu tuyến đường", type="prim
             st.error(f"Xảy ra lỗi kết nối OSRM: {e}")
 
 # =========================================================
-# HIỂN THỊ KẾT QUẢ (NẾU ĐÃ CÓ TRONG SESSION STATE)
+# HIỂN THỊ KẾT QUẢ TÍNH TOÁN
 # =========================================================
 if st.session_state["calculation_result"] is not None:
     res = st.session_state["calculation_result"]
@@ -350,7 +360,7 @@ if st.session_state["calculation_result"] is not None:
 
     st.success(f"🎉 **Đã tìm ra lộ trình ngắn nhất!** Tổng quãng đường lái xe thực tế: **{round(res['best_dist'], 2)} km**")
     
-    # 1. Liệt kê thứ tự & Link Google Maps
+    # 1. Liệt kê thứ tự
     st.markdown("### 📋 Thứ tự di chuyển tối ưu đề xuất:")
     gmaps_coords = []
     for step, (name, coords) in enumerate(res["ordered_points"]):
