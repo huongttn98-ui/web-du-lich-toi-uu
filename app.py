@@ -14,22 +14,26 @@ st.set_page_config(
     layout="wide"
 )
 
-# Khởi tạo danh sách địa điểm TRỐNG
+# Khởi tạo các biến quản lý trạng thái
 if "selected_places" not in st.session_state:
     st.session_state["selected_places"] = []
 
-# Khóa lưu kết quả tính toán
 if "calculation_result" not in st.session_state:
     st.session_state["calculation_result"] = None
 
+# Biến đếm phiên xóa để reset triệt để key của st.text_input
+if "clear_version" not in st.session_state:
+    st.session_state["clear_version"] = 0
+
 def add_place_to_list(place_name):
-    """Thêm địa điểm và tự động điền vào ô input trống đầu tiên"""
+    """Thêm địa điểm và điền tự động vào ô trống đầu tiên"""
     if place_name not in st.session_state["selected_places"]:
         st.session_state["selected_places"].append(place_name)
         
-        # Điền trực tiếp vào ô input trống trong Sidebar
-        for i in range(12): # Số lượng ô tối đa
-            key_name = f"input_place_{i}"
+        # Điền vào ô input trống đầu tiên tương ứng với phiên hiện tại
+        ver = st.session_state["clear_version"]
+        for i in range(12):
+            key_name = f"input_place_{i}_v{ver}"
             if key_name in st.session_state and not st.session_state[key_name]:
                 st.session_state[key_name] = place_name
                 break
@@ -70,7 +74,7 @@ def smart_geocode(input_str):
 
     for query in [search_text_full, search_query]:
         nom_url = f"https://nominatim.openstreetmap.org/search?q={requests.utils.quote(query)}&format=json&limit=1"
-        headers = {"User-Agent": "TourismRouteOptimizerApp/10.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/11.0"}
         try:
             res = requests.get(nom_url, headers=headers, timeout=4).json()
             if res and len(res) > 0:
@@ -88,7 +92,7 @@ def get_place_info_wikipedia(place_name):
     wiki_search_url = f"https://vi.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean_name)}&format=json"
     
     try:
-        headers = {"User-Agent": "TourismRouteOptimizerApp/10.0"}
+        headers = {"User-Agent": "TourismRouteOptimizerApp/11.0"}
         search_res = requests.get(wiki_search_url, headers=headers, timeout=3).json()
         search_results = search_res.get("query", {}).get("search", [])
         
@@ -258,20 +262,21 @@ num_destinations = st.sidebar.number_input(
 st.sidebar.subheader("3. Danh sách điểm chọn:")
 destination_inputs = []
 
-# Tải và giữ đồng bộ trạng thái của các ô nhập liệu
+# Tải danh sách điểm dựa theo phiên hoạt động
+ver = st.session_state["clear_version"]
 for i in range(num_destinations):
-    key_name = f"input_place_{i}"
+    key_name = f"input_place_{i}_v{ver}"
     if key_name not in st.session_state:
         st.session_state[key_name] = st.session_state["selected_places"][i] if i < len(st.session_state["selected_places"]) else ""
     
     dest_str = st.sidebar.text_input(f"Địa điểm {i+1}:", key=key_name)
     destination_inputs.append(dest_str)
 
+# NÚT XÓA SẠCH ĐÃ ĐƯỢC XỬ LÝ AN TOÀN
 if st.sidebar.button("🗑️ Xóa sạch danh sách"):
     st.session_state["selected_places"] = []
-    for i in range(12):
-        st.session_state[f"input_place_{i}"] = ""
     st.session_state["calculation_result"] = None
+    st.session_state["clear_version"] += 1  # Đổi version để tạo mới hoàn toàn các key ô nhập liệu
     st.rerun()
 
 # ---------------------------------------------------------
